@@ -11,7 +11,6 @@ from retrival.llm_router import llm_router
 from retrival.re_rank import ReRank
 from generation.llm_stm import ChatWithMemory
 
-# Cấu hình logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
