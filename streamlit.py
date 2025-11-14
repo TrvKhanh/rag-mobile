@@ -16,11 +16,11 @@ st.set_page_config(
 # API Configuration
 API_BASE_URL = "http://127.0.0.1:8000"
 
-# Custom CSS for better styling
+# Custom CSS for enhanced UI styling and layout
 st.markdown("""
 <style>
 
-/* Chỉ cho phép scroll ở chat container */
+/* Restrict scrolling to chat container only */
 .main-header {
     font-size: 3rem;
     font-weight: bold;
@@ -100,14 +100,14 @@ st.markdown("""
 }
 
 
-/* Đảm bảo main content không bị scroll */
+/* Prevent main content area from scrolling */
 .main-content {
     height: calc(100vh - 150px);
     overflow: hidden !important;
     position: relative;
 }
 
-/* CSS cho chat container với scroll cố định */
+/* Fixed-height chat container with vertical scrolling */
 .chat-container {
     height: 650px;
     overflow-y: auto;
@@ -118,7 +118,7 @@ st.markdown("""
     position: relative;
 }
 
-/* Cố định input area */
+/* Sticky input area positioned at bottom */
 .input-container {
     position: sticky;
     bottom: 0;
@@ -130,22 +130,23 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# JavaScript function for auto-scrolling chỉ nội dung chat
+# Auto-scroll JavaScript injection for chat container
+# Ensures chat messages are always visible by scrolling to bottom
 def add_auto_scroll_script():
     components.html("""
     <script>
     function scrollChatToBottom() {
-        // CHỈ cuộn container chat, KHÔNG cuộn cả trang
+        // Scroll only the chat container, not the entire page
         const containers = parent.document.querySelectorAll('div[style*="height: 650px"]');
         containers.forEach(container => {
-            // Kiểm tra nếu đây là chat container (có chứa tin nhắn)
+            // Verify this is the chat container by checking for message indicators
             if (container.innerHTML.includes('chat-message') || container.innerHTML.includes('💬')) {
                 container.scrollTop = container.scrollHeight;
                 console.log('Chat container scrolled to bottom');
             }
         });
         
-        // Backup: tìm container có overflow-y auto/scroll và height 650px
+        // Fallback: locate scrollable containers with overflow-y and fixed height
         const scrollableContainers = parent.document.querySelectorAll('div');
         scrollableContainers.forEach(div => {
             const computedStyle = parent.window.getComputedStyle(div);
@@ -156,16 +157,16 @@ def add_auto_scroll_script():
         });
     }
     
-    // Execute với delays nhẹ hơn
+    // Execute scroll with progressive delays for DOM stability
     setTimeout(scrollChatToBottom, 100);
     setTimeout(scrollChatToBottom, 300);
     setTimeout(scrollChatToBottom, 600);
     
-    // Monitor chỉ cho chat messages thay đổi
+    // Monitor DOM mutations specifically for chat message changes
     const observer = new MutationObserver(function(mutations) {
         let chatChanged = false;
         mutations.forEach(function(mutation) {
-            // Chỉ scroll khi có tin nhắn mới
+            // Trigger scroll only when new messages are added
             if (mutation.addedNodes.length > 0) {
                 for (let node of mutation.addedNodes) {
                     if (node.nodeType === 1 && 
@@ -191,7 +192,7 @@ def add_auto_scroll_script():
     </script>
     """, height=0)
 
-# Thêm header cố định trên cùng
+# Fixed header component at top of page
 st.markdown("""
 <div id="custom-header" style="
     position: fixed;
@@ -226,35 +227,56 @@ if "scroll_key" not in st.session_state:
 
 
 
-def send_message_user(message: str) -> Optional[dict]:
+def send_message_user(message: str, thread_id: Optional[str] = None) -> Optional[dict]:
+    """
+    Send user message to chat API endpoint.
+    
+    Args:
+        message: User input message to send
+        thread_id: Optional conversation thread ID for maintaining context
+        
+    Returns:
+        Response dictionary with bot reply and conversation ID, or None on error
+    """
     try:
         payload = {"message": message}
-        response = requests.post(f"{API_BASE_URL}/chat", json=payload, timeout=30)  
+        if thread_id:
+            payload["thread_id"] = thread_id
+        response = requests.post(f"{API_BASE_URL}/chat", json=payload, timeout=60)  
         if response.status_code == 200:
-            return response.json()
+            try:
+                return response.json()
+            except ValueError as json_error:
+                st.error(f"JSON parsing error from API: {json_error}")
+                st.error(f"Response text: {response.text[:200]}")
+                return None
         else:
-            st.error(f"Lỗi API: {response.status_code} - {response.text}")
+            st.error(f"API error: {response.status_code} - {response.text}")
             return None
+    except requests.exceptions.Timeout:
+        st.error("⏱️ Request timeout - API took too long to respond. Please try again.")
+        return None
+    except requests.exceptions.ConnectionError:
+        st.error("🔌 Unable to connect to API. Please verify the server is running.")
+        return None
     except requests.exceptions.RequestException as e:
-        fake_reply = f"Hệ thống hiện đang bảo trì"
-        return {"response": fake_reply, "conversation_id": st.session_state.conversation_id}
+        st.error(f"❌ Connection error: {str(e)}")
+        return None
 
 
 
 def main():
-    # Sidebar giữ nguyên
+
     with st.sidebar:
         st.markdown("### ⚙️ Cài đặt")
-        # Thêm thanh trượt lựa chọn số top k tìm kiếm
+
         top_k = st.slider("Số lượng kết quả tìm kiếm", min_value=1, max_value=10, value=st.session_state.get('top_k', 5), key="top_k")
         print(top_k)
-        # Clear chat button
         if st.button("🗑️ Xóa lịch sử chat", use_container_width=True):
             st.session_state.messages = []
             st.session_state.conversation_id = None
             st.rerun()
 
-        # Export chat
        
         if st.button("📥 Xuất lịch sử chat", use_container_width=True):
                 chat_data = {
@@ -280,7 +302,7 @@ def main():
 
         
 
-    # Main chat area
+    # Main chat interface layout
     col1, col2, col3 = st.columns([1, 30, 1])
     with col2:
         
@@ -288,10 +310,11 @@ def main():
             with chat_container:
                 if not st.session_state.messages:
                     st.markdown(
-                        "<div style='color:#888; text-align:center; margin-top:40px;'>💬 Chào bạn tôi có thể giúp gì cho bạn!</div>",
+                        "<div style='color:#888; text-align:center; margin-top:40px;'>💬 Hello! How can I help you today?</div>",
                         unsafe_allow_html=True
                     )
                 else:
+                    # Render chat message history
                     for i, message in enumerate(st.session_state.messages):
                         if message["role"] == "user":
                             st.markdown(
@@ -311,34 +334,37 @@ def main():
                             )
                     st.markdown('<div style="clear:both;"></div>', unsafe_allow_html=True)
 
-            # --- Input area fixed at the bottom ---
+            # User input form with fixed positioning
             with st.form("user_input_form", clear_on_submit=True):
                 col_input, col_btn = st.columns([16, 1])
                 with col_input:
-                    user_input = st.text_input("Nhập tin nhắn", placeholder="Nhập tin nhắn...", key="user_input_text", label_visibility="collapsed")
+                    user_input = st.text_input("Enter message", placeholder="Type your message...", key="user_input_text", label_visibility="collapsed")
                     print(user_input)
                 with col_btn:
                     send_btn = st.form_submit_button("Send")
 
                 if send_btn and user_input:
+                    # Append user message to session state
                     st.session_state.messages.append({
                         "role": "user",
                         "content": user_input,
                         "timestamp": time.strftime("%H:%M")
                     })
                     
-                    with st.spinner("Đang gửi tin nhắn..."):
-                        response_data = send_message_user(user_input)
+                    # Send message to API and handle response
+                    with st.spinner("Sending message..."):
+                        response_data = send_message_user(user_input, st.session_state.conversation_id)
                         bot_message = None
                         
                         if response_data:
-                            
+                            # Extract bot response and conversation ID
                             bot_message = response_data.get("response") or response_data.get("content")
-                            conversation_id = response_data.get("conversation_id")
+                            conversation_id = response_data.get("conversation_id") or response_data.get("thread_id")
                             if conversation_id:
                                 st.session_state.conversation_id = conversation_id
 
                         if bot_message:
+                            # Append bot response to session state
                             st.session_state.messages.append({
                                 "role": "assistant",
                                 "content": bot_message,
@@ -347,7 +373,7 @@ def main():
                            
                             st.session_state.scroll_key += 1
                         else:
-                            st.error("Bot không phản hồi. Vui lòng thử lại.")
+                            st.error("Bot did not respond. Please try again.")
                     
                    
                     st.rerun()

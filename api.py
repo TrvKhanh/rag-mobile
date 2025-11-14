@@ -11,7 +11,7 @@ from retrival.llm_router import llm_router
 from retrival.re_rank import ReRank
 from generation.llm_stm import ChatWithMemory
 
-# Cấu hình logging
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -88,7 +88,7 @@ def chat(req: ChatRequest):
             logger.info("Chat mode: Using simple chat without RAG")
             messages = [HumanMessage(content=req.message)]
 
-        logger.info(f"Invoking LLM with {len(messages)} messages")
+        logger.info(f"Invoking LLM with {len(messages)} new messages (history will be loaded from memory)")
         response = llm.invoke(
             input={"messages": messages},
             config={"configurable": {"thread_id": thread_id}}
@@ -99,6 +99,7 @@ def chat(req: ChatRequest):
 
         return {
             "thread_id": thread_id,
+            "conversation_id": thread_id,  
             "response": ai_reply
         }
     except Exception as e:
