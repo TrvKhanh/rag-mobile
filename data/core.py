@@ -2,7 +2,6 @@ import chromadb
 from chromadb.utils import embedding_functions
 import pandas as pd
 
-# Khởi tạo Chroma
 path_database = "./data.chromadb"
 client = chromadb.PersistentClient(path_database)
 embf = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -25,7 +24,7 @@ def add_product_to_production(dataframe, production_id, collection):
     )
 
 try:
-    df = pd.read_csv("hoangha.csv")
+    df = pd.read_csv("/home/big/Projects/rag-mobile/data/hoangha.csv")
 except Exception as e:
     raise e
 

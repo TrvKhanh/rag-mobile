@@ -12,12 +12,10 @@ model.eval()
 
 
 
-
 class HybridSearch:
     def __init__(self, topk: int, path: str, document: List[Document], collection_name: str):
         self.k = topk
         
-        # Kiểm tra nếu documents rỗng, tạo document mặc định
         if not document:
             document = [Document(page_content="Chào mừng bạn đến với shop điện thoại!", metadata={"source": "default"})]
         
@@ -48,8 +46,7 @@ class ReRank:
 
     def query(self, query: str, score_threshold: float = 5.0) -> List[Document]:
         results = self.llm.query(query)
-        
-        # Nếu không có kết quả, trả về list rỗng
+
         if not results:
             return []
             

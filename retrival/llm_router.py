@@ -1,9 +1,9 @@
 import ast
-from generation.llm import ChatWithMemory, model
+from generation.llm_stm import LLM
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 
-model = model | StrOutputParser()
+model = LLM | StrOutputParser()
 
 system_prompt = """ Bạn là bộ phân loại yêu cầu của người dùng cho hệ thống chatbot RAG điện thoại.
                         Nhiệm vụ:
