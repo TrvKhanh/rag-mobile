@@ -18,7 +18,6 @@ from pydantic import Field, PrivateAttr
 
 _logger = logging.getLogger(__name__)
 
-# Import for Gemini error handling
 try:
     from google.genai import errors as genai_errors
 except ImportError:
@@ -169,29 +168,24 @@ class LLM:
                 else:
                     raise ValueError(f"Unknown provider: {self.provider}")
                 
-                # Success - return response
+                
                 return response
                 
             except Exception as e:
-                # Check if it's a 503 error (service unavailable/overloaded)
                 is_503_error = False
                 error_str = str(e)
                 
-                # Check for ServerError with status_code 503
                 if genai_errors and isinstance(e, genai_errors.ServerError):
-                    # Try to get status_code from the exception
                     if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 503:
                         is_503_error = True
-                    # Also check error message for 503
                     elif "503" in error_str or "UNAVAILABLE" in error_str:
                         is_503_error = True
-                # Check error message for 503 indicators
+              
                 elif "503" in error_str or "overloaded" in error_str.lower() or "UNAVAILABLE" in error_str:
                     is_503_error = True
                 
-                # If it's a 503 error and we have retries left, retry with exponential backoff
                 if is_503_error and attempt < max_retries - 1:
-                    delay = base_delay * (2 ** attempt)  # Exponential backoff: 2s, 4s, 8s
+                    delay = base_delay * (2 ** attempt) 
                     _logger.warning(
                         f"Gemini API overloaded (503). Retrying in {delay}s... "
                         f"(Attempt {attempt + 1}/{max_retries})"
@@ -199,7 +193,7 @@ class LLM:
                     time.sleep(delay)
                     continue
                 else:
-                    # Not a retryable error or out of retries
+                
                     if is_503_error:
                         _logger.error(
                             f"Gemini API still overloaded after {max_retries} attempts. "
@@ -208,7 +202,6 @@ class LLM:
                     _logger.exception("Generation failed")
                     raise RuntimeError(f"Generation failed for {self.provider}: {e}") from e
 
-        # Should not reach here, but just in case
         raise RuntimeError(f"Generation failed for {self.provider} after {max_retries} attempts")
 
 class ChatLLM(BaseChatModel):
@@ -271,4 +264,3 @@ class ChatLLM(BaseChatModel):
     def _llm_type(self) -> str:
         return f"custom-{self._llm.provider}"
     
-
