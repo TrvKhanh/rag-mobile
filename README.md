@@ -33,42 +33,6 @@ graph TB
 
 ## How It Works
 
-### Request Flow Diagram
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Frontend
-    participant API
-    participant Router
-    participant RAG
-    participant LLM
-    participant Memory
-    
-    User->>Frontend: Send message
-    Frontend->>API: POST /chat/
-    API->>Router: Classify query
-    Router-->>API: Route decision
-    
-    alt Product Inquiry
-        API->>RAG: Query normalization
-        RAG->>RAG: Hybrid search (BM25 + Vector)
-        RAG->>RAG: Re-ranking with ViRanker
-        RAG-->>API: Retrieved context
-        API->>LLM: Generate with context
-    else General Chat
-        API->>LLM: Direct generation
-    end
-    
-    LLM->>Memory: Load conversation history
-    Memory-->>LLM: Previous messages
-    LLM->>LLM: Generate response
-    LLM->>Memory: Save new messages
-    LLM-->>API: Response
-    API-->>Frontend: JSON response
-    Frontend-->>User: Display message
-```
-
 ### RAG Pipeline
 
 ```mermaid
@@ -189,3 +153,4 @@ Process chat messages and return responses.
   "response": "string"
 }
 ```
+
