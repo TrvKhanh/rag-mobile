@@ -1,0 +1,2 @@
+
+STRICT: Return valid JSON object only, no extra text.

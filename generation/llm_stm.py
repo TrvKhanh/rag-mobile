@@ -9,6 +9,13 @@ from langchain_core.messages import HumanMessage, SystemMessage, RemoveMessage
 from .model import ChatLLM
 dotenv.load_dotenv()
 
+# Get the directory of the current script
+base_dir = os.path.dirname(__file__)
+
+# Load the summary prompt
+with open(os.path.join(base_dir, '..', 'prompts', 'generation', 'summary.j2'), 'r', encoding='utf-8') as f:
+    SUMMARY_PROMPT = f.read()
+
 
 if not os.environ.get("GOOGLE_API_KEY"):
     api_key = getpass.getpass("ENTER GOOGLE_API_KEY: ").strip()
@@ -40,23 +47,12 @@ class ChatWithMemory:
 
         self.memory = MemorySaver()
 
-    def _build_system_message(self):
-        """System prompt configuration."""
-        return SystemMessage(content=(
-            "Bạn là một nhân viên tư vấn điện thoại nhiệt tình"
-            "Hãy trả lời người dùng một cách lịch sự, tên bạn là Lisa, luôn trả lời là Lisa thay vì tôi"
-        ))
-
     def _summarize_messages(self, message_history):
         """Summarize chat history when it exceeds the threshold."""
-        summary_prompt = (
-            "Distill the above chat messages into a single summary message. "
-            "Include as many specific details as you can."
-        )
+        summary_prompt = SUMMARY_PROMPT
         return self.model.invoke(message_history + [HumanMessage(content=summary_prompt)])
 
     def call_model(self, state: MessagesState):
-        system_message = self._build_system_message()
         message_history = state["messages"][:-1]
 
         if len(message_history) >= self.summary_threshold:
@@ -66,11 +62,11 @@ class ChatWithMemory:
             delete_ops = [RemoveMessage(id=m.id) for m in state["messages"]]
 
             human_message = HumanMessage(content=last_user_message.content)
-            response = self.model.invoke([system_message, summary_message, human_message])
+            response = self.model.invoke([summary_message, human_message])
 
             message_updates = [summary_message, human_message, response] + delete_ops
         else:
-            message_updates = self.model.invoke([system_message] + state["messages"])
+            message_updates = self.model.invoke(state["messages"])
 
         return {"messages": message_updates}
 

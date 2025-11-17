@@ -3,7 +3,10 @@ import streamlit.components.v1 as components
 import requests
 import json
 import time
-from typing import Optional
+from typing import Optional, Generator
+from audio_recorder_streamlit import audio_recorder
+import speech_recognition as sr
+import io
 
 # Page configuration
 st.set_page_config(
@@ -223,46 +226,8 @@ if "api_status" not in st.session_state:
     st.session_state.api_status = "unknown"
 if "scroll_key" not in st.session_state:
     st.session_state.scroll_key = 0
-
-
-
-
-def send_message_user(message: str, thread_id: Optional[str] = None) -> Optional[dict]:
-    """
-    Send user message to chat API endpoint.
-    
-    Args:
-        message: User input message to send
-        thread_id: Optional conversation thread ID for maintaining context
-        
-    Returns:
-        Response dictionary with bot reply and conversation ID, or None on error
-    """
-    try:
-        payload = {"message": message}
-        if thread_id:
-            payload["thread_id"] = thread_id
-        response = requests.post(f"{API_BASE_URL}/chat", json=payload, timeout=60)  
-        if response.status_code == 200:
-            try:
-                return response.json()
-            except ValueError as json_error:
-                st.error(f"JSON parsing error from API: {json_error}")
-                st.error(f"Response text: {response.text[:200]}")
-                return None
-        else:
-            st.error(f"API error: {response.status_code} - {response.text}")
-            return None
-    except requests.exceptions.Timeout:
-        st.error("⏱️ Request timeout - API took too long to respond. Please try again.")
-        return None
-    except requests.exceptions.ConnectionError:
-        st.error("🔌 Unable to connect to API. Please verify the server is running.")
-        return None
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Connection error: {str(e)}")
-        return None
-
+if "new_message_to_process" not in st.session_state:
+    st.session_state.new_message_to_process = None
 
 
 def main():
@@ -300,8 +265,6 @@ def main():
         st.markdown(f"**Tin nhắn người dùng:** {user_messages}")
         st.markdown(f"**Phản hồi bot:** {bot_messages}")    
 
-        
-
     # Main chat interface layout
     col1, col2, col3 = st.columns([1, 30, 1])
     with col2:
@@ -334,49 +297,141 @@ def main():
                             )
                     st.markdown('<div style="clear:both;"></div>', unsafe_allow_html=True)
 
-            # User input form with fixed positioning
-            with st.form("user_input_form", clear_on_submit=True):
-                col_input, col_btn = st.columns([16, 1])
-                with col_input:
-                    user_input = st.text_input("Enter message", placeholder="Type your message...", key="user_input_text", label_visibility="collapsed")
-                    print(user_input)
-                with col_btn:
-                    send_btn = st.form_submit_button("Send")
+                # Streaming logic
+                if st.session_state.new_message_to_process:
+                    message_to_process = st.session_state.new_message_to_process
+                    st.session_state.new_message_to_process = None # Clear the flag
 
-                if send_btn and user_input:
-                    # Append user message to session state
-                    st.session_state.messages.append({
-                        "role": "user",
-                        "content": user_input,
-                        "timestamp": time.strftime("%H:%M")
-                    })
-                    
-                    # Send message to API and handle response
-                    with st.spinner("Sending message..."):
-                        response_data = send_message_user(user_input, st.session_state.conversation_id)
-                        bot_message = None
-                        
-                        if response_data:
-                            # Extract bot response and conversation ID
-                            bot_message = response_data.get("response") or response_data.get("content")
-                            conversation_id = response_data.get("conversation_id") or response_data.get("thread_id")
-                            if conversation_id:
-                                st.session_state.conversation_id = conversation_id
+                    def response_generator():
+                        full_response_content = ""
+                        try:
+                            payload = {"message": message_to_process}
+                            if st.session_state.conversation_id:
+                                payload["thread_id"] = st.session_state.conversation_id
+                            
+                            with requests.post(f"{API_BASE_URL}/chat", json=payload, stream=True, timeout=60) as response:
+                                response.raise_for_status()
+                                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                                    if not chunk: continue
+                                    if chunk.startswith("thread_id:"):
+                                        st.session_state.conversation_id = chunk.split(":", 1)[1].strip()
+                                    elif chunk.startswith(("RETRIEVAL_INFO:", "COMPARISON_INFO:")):
+                                        st.toast(chunk.split(":", 1)[1].strip())
+                                    else:
+                                        full_response_content += chunk
+                                        yield chunk
+                        except requests.exceptions.RequestException as e:
+                            error_msg = f"❌ Connection error: {str(e)}"
+                            st.error(error_msg)
+                            full_response_content = error_msg
+                        finally:
+                            if full_response_content:
+                                st.session_state.messages.append({
+                                    "role": "assistant",
+                                    "content": full_response_content,
+                                    "timestamp": time.strftime("%H:%M")
+                                })
 
-                        if bot_message:
-                            # Append bot response to session state
-                            st.session_state.messages.append({
-                                "role": "assistant",
-                                "content": bot_message,
-                                "timestamp": time.strftime("%H:%M")
-                            })
-                           
-                            st.session_state.scroll_key += 1
-                        else:
-                            st.error("Bot did not respond. Please try again.")
+                    # Use st.chat_message for robust streaming
+                    with st.chat_message("assistant", avatar="🤖"):
+                        # Display typing indicator
+                        typing_placeholder = st.empty()
+                        typing_placeholder.markdown("...") # Simple typing indicator
+
+                        def response_generator():
+                            full_response_content = ""
+                            try:
+                                payload = {"message": message_to_process}
+                                if st.session_state.conversation_id:
+                                    payload["thread_id"] = st.session_state.conversation_id
+                                
+                                with requests.post(f"{API_BASE_URL}/chat", json=payload, stream=True, timeout=60) as response:
+                                    response.raise_for_status()
+                                    for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
+                                        if not chunk: continue
+                                        if chunk.startswith("thread_id:"):
+                                            st.session_state.conversation_id = chunk.split(":", 1)[1].strip()
+                                        elif chunk.startswith(("RETRIEVAL_INFO:", "COMPARISON_INFO:")):
+                                            st.toast(chunk.split(":", 1)[1].strip())
+                                        else:
+                                            full_response_content += chunk
+                                            yield chunk
+                            except requests.exceptions.RequestException as e:
+                                error_msg = f"❌ Connection error: {str(e)}"
+                                st.error(error_msg)
+                                full_response_content = error_msg
+                            finally:
+                                if full_response_content:
+                                    st.session_state.messages.append({
+                                        "role": "assistant",
+                                        "content": full_response_content,
+                                        "timestamp": time.strftime("%H:%M")
+                                    })
+
+                        typing_placeholder.write_stream(response_generator)
                     
-                   
+                    st.session_state.scroll_key += 1
                     st.rerun()
+
+
+            # User input section
+            col_form, col_voice = st.columns([15, 2])
+
+            with col_form:
+                with st.form("text_input_form", clear_on_submit=True):
+                    col_text, col_send = st.columns([8, 1])
+                    with col_text:
+                        user_input = st.text_input(
+                            "Enter message",
+                            placeholder="Type your message and press Enter...",
+                            label_visibility="collapsed"
+                        )
+                    with col_send:
+                        send_btn = st.form_submit_button("Send")
+
+                    if send_btn and user_input:
+                        st.session_state.messages.append({
+                            "role": "user",
+                            "content": user_input,
+                            "timestamp": time.strftime("%H:%M")
+                        })
+                        st.session_state.new_message_to_process = user_input
+                        st.rerun()
+
+            with col_voice:
+                audio_bytes = audio_recorder(
+                    text="",
+                    icon_size="1.5x",
+                    pause_threshold=2.0,
+                    sample_rate=44100,
+                    key="audio_recorder"
+                )
+            
+            # Handle voice input (now fully separate)
+            if audio_bytes:
+                try:
+                    with st.spinner("Đang xử lý giọng nói..."):
+                        r = sr.Recognizer()
+                        audio_io = io.BytesIO(audio_bytes)
+                        with sr.AudioFile(audio_io) as source:
+                            audio_data = r.record(source)
+                        text = r.recognize_google(audio_data, language="vi-VN")
+                    
+                    if text:
+                        st.session_state.messages.append({
+                            "role": "user",
+                            "content": text,
+                            "timestamp": time.strftime("%H:%M")
+                        })
+                        st.session_state.new_message_to_process = text
+                        st.rerun()
+
+                except sr.UnknownValueError:
+                    st.toast("Không thể hiểu giọng nói")
+                except sr.RequestError as e:
+                    st.toast(f"Không thể kết nối đến dịch vụ nhận dạng giọng nói của Google; {e}")
+                except Exception as e:
+                    st.error(f"Đã xảy ra lỗi trong quá trình xử lý âm thanh: {e}")
                    
 
     add_auto_scroll_script()
